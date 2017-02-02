@@ -10,6 +10,7 @@ use IO::Prompt;
 # Input file in tab format, with headers, first column gene IDs, second column PubMed IDs
 # only one pair geneid:pubmedid per row
 # Checks if the PubMed ID is already present
+# For non codings genes (rRNAs and tRNAs) it adds the publication to the rRNA/tRNA feature 
 
 my ($help, $f_data, $name_out, $dbname, $dbhost, $dbport, $dbuser);
 
@@ -66,6 +67,9 @@ my $type_id_pseudo = 3229;
 my $type_id_part = 8;
 my $type_id_derives = 2852; 
 my $type_id_unfetched = 2836;
+my $type_id_rrna = 3145;
+my $type_id_trna = 3146;
+#my $type_id_sno = ; # not loaded yet, but they will
 
 #### Pathogen instance
 #my $type_id_part = 42;
@@ -91,6 +95,9 @@ my $s_sql_add_feature_pub_id = $dbh->prepare('INSERT INTO feature_pub (feature_i
 
 ## Get feature_pub_id  
 my $s_sql_get_fpub_id = $dbh->prepare('SELECT feature_pub_id FROM feature_pub WHERE feature_id=? AND pub_id=?');
+
+## Check for non coding genes !00 only checks for rRNAs and tRNAs
+my $s_sql_check_non_coding = $dbh->prepare('SELECT feature_id FROM feature WHERE feature_id=? AND type_id IN (?,?)');
 
 #### Get PubMed IDs into hashes key:gene_id, value:pubmed_id 
 open (my $h_drop, ">>", $f_drop);
@@ -121,9 +128,10 @@ Geneid: foreach my $gene_id ( sort (keys %pubmed_ids)){
 
     }
 
-    #### Get polypeptide feature_id !00 add multiple transcripts check
+    #### Get polypeptide feature_id 
     my $pep_fids_ref = get_pep_fid(
-                        $gene_id, $type_id_gene, $type_id_pseudo, $type_id_part, $type_id_derives
+                        $gene_id, $type_id_gene, $type_id_pseudo, $type_id_part, $type_id_derives,
+                        $type_id_rrna, $type_id_trna
                         );
 
     #### Unfold multiple transcripts
@@ -196,7 +204,8 @@ sub get_pubmed_ids_from_tsv {
 ########
 
 sub get_pep_fid {
-    my ($s_gene_id, $s_type_id_gene, $s_type_id_pseudo, $s_type_id_part, $s_type_id_derives) =  @_;
+    my ($s_gene_id, $s_type_id_gene, $s_type_id_pseudo, $s_type_id_part, $s_type_id_derives, @s_nc_types) =  @_;
+    #my @s_nc_types = ($s_type_id_rrna, $s_type_id_trna ); # !00 For now only those two types in fungidb chado
     my ($s_gene_fid, $s_mRNA_fid);
     my @s_pep_fid;
 
@@ -218,8 +227,20 @@ sub get_pep_fid {
 
             print "$s_gene_id\t$s_pep_fid\tPEP_FEATURE_ID\n";
 
-            push(@s_pep_fid, $s_pep_fid);
+            if(defined $s_pep_fid){ # check if there is a polypeptide (non coding genes)
+                push(@s_pep_fid, $s_pep_fid);
 
+            } else{ # check if the feature is part of a non coding gene
+
+                my $s_nc_fid = $dbh->selectrow_array($s_sql_check_non_coding, undef, $s_mRNA_fid, @s_nc_types); 
+
+                if (defined $s_nc_fid){
+
+                    push(@s_pep_fid, $s_nc_fid); # add publication in the transcript feature
+
+                }; # if not found will default to undefined @s_pep_fid and exit
+
+            }
         }
 
     } else{
