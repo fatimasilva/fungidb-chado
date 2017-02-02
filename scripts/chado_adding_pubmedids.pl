@@ -72,7 +72,7 @@ my $type_id_unfetched = 2836;
 #my $type_id_derives = 69; 
 #my $type_id_unfetched = 26797;
 
-#### Prepare SQL statements !00 needs checking
+#### Prepare SQL statements
 
 ## Get feature id of gene or pseudogene by gene ID (uses type_id_gene and type_id_pseudo
 my $s_sql_get_gene_fid = $dbh->prepare('SELECT feature_id FROM feature WHERE uniquename=? AND (type_id=? OR type_id=?)');
@@ -122,10 +122,12 @@ Geneid: foreach my $gene_id ( sort (keys %pubmed_ids)){
     }
 
     #### Get polypeptide feature_id !00 add multiple transcripts check
-    my $pep_fids = get_pep_fid($gene_id, $type_id_gene, $type_id_pseudo, $type_id_part, $type_id_derives);
+    my $pep_fids_ref = get_pep_fid(
+                        $gene_id, $type_id_gene, $type_id_pseudo, $type_id_part, $type_id_derives
+                        );
 
     #### Unfold multiple transcripts
-    my @pep_fids = split(/\|/, $pep_fids);
+    my @pep_fids = @{$pep_fids_ref};
 
     foreach my $pep_fid (@pep_fids){
 
@@ -195,7 +197,8 @@ sub get_pubmed_ids_from_tsv {
 
 sub get_pep_fid {
     my ($s_gene_id, $s_type_id_gene, $s_type_id_pseudo, $s_type_id_part, $s_type_id_derives) =  @_;
-    my ($s_gene_fid, $s_mRNA_fid, $s_pep_fid);
+    my ($s_gene_fid, $s_mRNA_fid);
+    my @s_pep_fid;
 
     #### get gene feature id
     $s_gene_fid = $dbh->selectrow_array(
@@ -205,12 +208,19 @@ sub get_pep_fid {
 
     if(defined $s_gene_fid){
 
-        #### Get polypeptide feature id 
-        $s_mRNA_fid=$dbh->selectrow_array($s_sql_subject_id, undef, $s_gene_fid, $s_type_id_part);
+        #### Get polypeptide feature id. Consider multiple transcripts 
+        my @s_mRNA_fid = @{$dbh->selectcol_arrayref($s_sql_subject_id, undef, $s_gene_fid, $s_type_id_part)};
 
-        $s_pep_fid=$dbh->selectrow_array($s_sql_subject_id, undef, $s_mRNA_fid, $s_type_id_derives);
+        foreach my $s_mRNA_fid (@s_mRNA_fid){
+            # get polypeptide feature id for each transcript
 
-        print "$s_gene_id\t$s_pep_fid\tPEP_FEATURE_ID\n";
+            my $s_pep_fid=$dbh->selectrow_array($s_sql_subject_id, undef, $s_mRNA_fid, $s_type_id_derives);
+
+            print "$s_gene_id\t$s_pep_fid\tPEP_FEATURE_ID\n";
+
+            push(@s_pep_fid, $s_pep_fid);
+
+        }
 
     } else{
 
@@ -219,14 +229,14 @@ sub get_pep_fid {
     }
 
 
-    unless(defined $s_pep_fid){ # polypeptide feature_id not found
-        #$errflag = 1; # Let the loading continue but log the missing geneID
+    unless( @s_pep_fid ){ # polypeptide feature_id not found
+        #$errflag = 1; # Let the loading continue but log the missing gene/polypeptide ID
         print $h_drop "$s_gene_id\tPOLYPEPTIDE_NOT_FOUND\n";
         next Geneid; 
     }
 
     #### return polypeptide feature id
-    return $s_pep_fid;
+    return \@s_pep_fid;
 
 }
 
