@@ -218,21 +218,26 @@ sub get_pep_fid {
     if(defined $s_gene_fid){
 
         #### Get polypeptide feature id. Consider multiple transcripts 
-        my @s_mRNA_fid = @{$dbh->selectcol_arrayref($s_sql_subject_id, undef, $s_gene_fid, $s_type_id_part)};
+        my @s_mRNA_fid = @{$dbh->selectcol_arrayref(
+                                    $s_sql_subject_id, undef, $s_gene_fid, $s_type_id_part
+                                    )
+                            };
 
         foreach my $s_mRNA_fid (@s_mRNA_fid){
             # get polypeptide feature id for each transcript
 
-            my $s_pep_fid=$dbh->selectrow_array($s_sql_subject_id, undef, $s_mRNA_fid, $s_type_id_derives);
+            print "$s_gene_id\t$s_mRNA_fid\tTRANSCRIPT_FID\n";
 
-            print "$s_gene_id\t$s_pep_fid\tPEP_FEATURE_ID\n";
+            my $s_pep_fid=$dbh->selectrow_array($s_sql_subject_id, undef, $s_mRNA_fid, $s_type_id_derives);
 
             if(defined $s_pep_fid){ # check if there is a polypeptide (non coding genes)
                 push(@s_pep_fid, $s_pep_fid);
 
             } else{ # check if the feature is part of a non coding gene
 
-                my $s_nc_fid = $dbh->selectrow_array($s_sql_check_non_coding, undef, $s_mRNA_fid, @s_nc_types); 
+                my $s_nc_fid = $dbh->selectrow_array(
+                                        $s_sql_check_non_coding, undef, $s_mRNA_fid, @s_nc_types
+                                        ); 
 
                 if (defined $s_nc_fid){
 
